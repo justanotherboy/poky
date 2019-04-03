@@ -63,6 +63,58 @@ do_install_ptest_base() {
             fi
         done
     done
+
+    if [ "${PTEST_BINDIR}" == "1" ]; then
+        install_ptest_bindir
+    fi
+}
+
+PTEST_BINDIR_PATH="${D}${PTEST_PATH}/bin"
+
+install_ptest_bindir() {
+    # Create ${PTEST_PATH}/bin to create symlinks to the package's binaries
+    # this way the path can be added to PATH and execute the binaries easier
+    # from ptest-runner.
+    bbdebug 1 "Generating PTEST's bin directory"
+    binary_paths="${bindir} ${sbindir} ${base_bindir} ${base_sbindir}"
+    mkdir -p ${PTEST_BINDIR_PATH}
+
+    for path in ${binary_paths}; do
+        for src in ${D}${path}/*; do
+            binary=`basename ${src}`
+            ln -s ${path}/${binary} ${PTEST_BINDIR_PATH}/${binary}
+        done
+    done
+}
+
+# This function needs to run after apply_update_alternative_renames because the
+# aforementioned function will update the ALTERNATIVE_LINK_NAME flag. Append is
+# used here to make this function to run as late as possible.
+PACKAGE_PREPROCESS_FUNCS_append = "${@bb.utils.contains("PTEST_BINDIR", "1", " ptest_update_alternatives", "", d)}"
+
+python ptest_update_alternatives() {
+    """
+    This function will fix the symlinks in the PTEST_BINDIR that
+    were broken by the renaming of update-alternatives
+    """
+
+    if not bb.data.inherits_class('update-alternatives', d) \
+           or not update_alternatives_enabled(d):
+        return
+
+    bb.note("Updating PTEST symlinks after the renaming of update-alternatives")
+
+    ptest_pkgd_bindir = os.path.join(d.getVar("PKGD"),
+                                     d.getVar("PTEST_PATH")[1:],
+                                     "bin")
+    links_dict = { os.path.join(ptest_pkgd_bindir, link):
+                   os.readlink(os.path.join(ptest_pkgd_bindir, link))
+                   for link in os.listdir(ptest_pkgd_bindir) }
+    for filename, link in links_dict.items():
+        alt_link = update_alternatives_get_alt_target(d, link)
+        if alt_link:
+            os.unlink(filename)
+            os.symlink(alt_link, filename)
 }
 
 do_configure_ptest_base[dirs] = "${B}"

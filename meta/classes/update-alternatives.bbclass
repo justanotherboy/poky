@@ -216,6 +216,43 @@ python apply_update_alternative_renames () {
             update_files(alt_target, alt_target_rename, pkg, d)
 }
 
+def update_alternatives_get_alt_target(d, link):
+    """
+    Returns the renamed binary modified by update-alternatives class.
+
+    Unfortunately not all update-alternative binaries/scripts implement a way
+    to provide a list of binaries for a link, so we need to use the build
+    metadata to get the information.
+
+    NOTE: This function needs to run after apply_update_alternative_renames
+    """
+    for pkg in (d.getVar('PACKAGES') or "").split():
+        for alt_name in (d.getVar('ALTERNATIVE_%s' % pkg) or "").split():
+            alt_link   = d.getVarFlag('ALTERNATIVE_LINK_NAME', alt_name)
+
+            # Just care for the link being asked for
+            if link != alt_link:
+                continue
+
+            alt_target = _ua_alt_target(d, alt_name, alt_link, pkg)
+            if alt_target != alt_link:
+                return alt_target
+            else:
+                return None
+
+    return None
+
+def _ua_alt_target(d, alt_name, alt_link, pkg):
+    alt_target = d.getVarFlag('ALTERNATIVE_TARGET_%s' % pkg, alt_name) or \
+                 d.getVarFlag('ALTERNATIVE_TARGET', alt_name) or \
+                 d.getVar('ALTERNATIVE_TARGET_%s' % pkg) or \
+                 d.getVar('ALTERNATIVE_TARGET') or \
+                 alt_link
+
+    # Sometimes alt_target is specified as relative to the link name.
+    alt_target   = os.path.join(os.path.dirname(alt_link), alt_target)
+    return alt_target
+
 PACKAGESPLITFUNCS_prepend = "populate_packages_updatealternatives "
 
 python populate_packages_updatealternatives () {
@@ -232,11 +269,7 @@ python populate_packages_updatealternatives () {
         alt_remove_links = ""
         for alt_name in (d.getVar('ALTERNATIVE_%s' % pkg) or "").split():
             alt_link     = d.getVarFlag('ALTERNATIVE_LINK_NAME', alt_name)
-            alt_target   = d.getVarFlag('ALTERNATIVE_TARGET_%s' % pkg, alt_name) or d.getVarFlag('ALTERNATIVE_TARGET', alt_name)
-            alt_target   = alt_target or d.getVar('ALTERNATIVE_TARGET_%s' % pkg) or d.getVar('ALTERNATIVE_TARGET') or alt_link
-            # Sometimes alt_target is specified as relative to the link name.
-            alt_target   = os.path.join(os.path.dirname(alt_link), alt_target)
-
+            alt_target   = _ua_alt_target(d, alt_name, alt_link, pkg)
             alt_priority = d.getVarFlag('ALTERNATIVE_PRIORITY_%s' % pkg,  alt_name) or d.getVarFlag('ALTERNATIVE_PRIORITY',  alt_name)
             alt_priority = alt_priority or d.getVar('ALTERNATIVE_PRIORITY_%s' % pkg) or d.getVar('ALTERNATIVE_PRIORITY')
 
